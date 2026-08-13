@@ -9,9 +9,7 @@
 
 단순한 스크래퍼가 아닙니다. 계량기 지침과 시간별 소비를 구분해 다루고, **시간별 사용량을 실제로 전기를 쓴 시각에 기록**합니다.
 
-<!-- images/dashboard-hacs.png 을 넣은 뒤 아래 주석을 푸세요
-![대시보드](images/dashboard-hacs.png)
--->
+![KEPCO 카드](images/cards.png)
 
 ## 왜 다른가
 
@@ -24,10 +22,6 @@
 ```
 
 덕분에 **처음 설치하는 순간 지난 청구주기 전체가 에너지 대시보드에 채워집니다.** Home Assistant가 며칠 꺼져 있었어도 다음 실행에서 빈 구간을 메웁니다.
-
-<!-- images/energy-dashboard.png 을 넣은 뒤 아래 주석을 푸세요
-![에너지 대시보드](images/energy-dashboard.png)
--->
 
 ## 특징
 
@@ -78,20 +72,12 @@
 
 **설정 → 기기 및 서비스 → 통합 추가 → KEPCO 스마트미터**
 
-<!-- images/config-flow.png 을 넣은 뒤 아래 주석을 푸세요
-![설정 화면](images/config-flow.png)
--->
-
 1. 파워플래너 **고객번호 또는 아이디**와 **비밀번호**
 2. **전월지침 (kWh)** — 한전 앱이나 고지서의 지침값. 비워두면 0부터 시작하는 상대값이 됩니다
 
 검침기준일은 묻지 않습니다. 청구 응답에서 자동으로 도출됩니다.
 
 검침 후에는 **설정 → 통합 → 옵션**에서 새 지침으로 갱신할 수 있습니다.
-
-<!-- images/device-page.png 을 넣은 뒤 아래 주석을 푸세요
-![기기 페이지](images/device-page.png)
--->
 
 ## 에너지 대시보드
 
@@ -115,9 +101,7 @@
 
 이번 청구주기 사용량을 누진 구간 위에 얹어 보여 줍니다.
 
-<!-- images/card-billing-cycle.png 을 넣은 뒤 아래 주석을 푸세요
 ![청구주기 카드](images/card-billing-cycle.png)
--->
 
 **카드 추가 → KEPCO 청구주기** 를 고르면 됩니다. YAML을 쓸 필요가 없습니다 — 엔티티 선택, 제목, 표시 옵션을 모두 **카드 편집 UI**에서 설정합니다.
 
@@ -163,9 +147,7 @@ Home Assistant 자체 컴포넌트(`ha-card`·`ha-dialog`·`ha-form`)와 디자�
 
 파워플래너의 `사용량/요금현황` 그래프를 재구성한 카드입니다. **한전에 추가로 요청하지 않고**, 통합이 이미 쌓아 둔 장기 통계만으로 그립니다.
 
-<!-- images/card-usage-chart.png 을 넣은 뒤 아래 주석을 푸세요
 ![사용량 현황 카드](images/card-usage-chart.png)
--->
 
 ```yaml
 type: custom:kepco-usage-chart-card
@@ -195,9 +177,7 @@ entity: sensor.kepco_smart_meter_XXXXXXXXXX_billing_cycle_usage
 
 현재 요금과 예상 요금을 보여 주고, 누르면 청구 항목 내역이 열립니다.
 
-<!-- images/card-bill.png 을 넣은 뒤 아래 주석을 푸세요
 ![전기요금 카드](images/card-bill.png)
--->
 
 ```yaml
 type: custom:kepco-bill-card
