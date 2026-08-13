@@ -1,0 +1,62 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "KEPCO Smart Meter",
+        "description": "Sign in with your KEPCO PowerPlanner account.",
+        "data": {
+          "user_id": "Customer number or ID",
+          "password": "Password"
+        }
+      },
+      "meter": {
+        "title": "Meter baseline",
+        "description": "Current reading period: {period}\n\nKEPCO does not expose the meter register directly. Provide the previous meter reading once and the integration will add hourly usage on top of it so the value matches your physical meter. Leave empty to start from zero.",
+        "data": {
+          "customer_number": "Customer number",
+          "previous_reading": "Previous meter reading (kWh)",
+          "anchor_date": "Reading date"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate",
+        "description": "Your PowerPlanner password appears to have changed.",
+        "data": { "password": "Password" }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to PowerPlanner",
+      "invalid_auth": "Invalid customer number/ID or password",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "This meter is already configured",
+      "reauth_successful": "Re-authentication was successful"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Update meter baseline",
+        "description": "After a meter reading, enter the new register value to re-anchor the cumulative total.",
+        "data": { "previous_reading": "Previous meter reading (kWh)" }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "meter_energy_import": { "name": "Meter reading" },
+      "billing_cycle_energy": { "name": "Billing cycle usage" },
+      "last_hour_energy": { "name": "Last hour energy" },
+      "last_hour_average_power": { "name": "Last hour average power" },
+      "today_energy": { "name": "Today's energy" },
+      "yesterday_energy": { "name": "Yesterday's energy" },
+      "predicted_energy": { "name": "Predicted usage" },
+      "progressive_level": { "name": "Progressive tier" },
+      "days_until_reading": { "name": "Days until reading" },
+      "current_bill": { "name": "Current bill" },
+      "predicted_bill": { "name": "Predicted bill" },
+      "last_reading_time": { "name": "Last reading time" }
+    }
+  }
+}

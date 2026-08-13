@@ -1,0 +1,13 @@
+{
+  "domain": "kepco_smart_meter",
+  "name": "KEPCO 스마트미터",
+  "codeowners": ["@jaein4722"],
+  "config_flow": true,
+  "dependencies": ["recorder"],
+  "documentation": "https://github.com/jaein4722/ha-kepco-smart-meter",
+  "integration_type": "device",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/jaein4722/ha-kepco-smart-meter/issues",
+  "requirements": ["curl_cffi>=0.7.0"],
+  "version": "0.1.0"
+}
