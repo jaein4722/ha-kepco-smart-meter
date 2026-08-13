@@ -79,11 +79,16 @@ SENSORS: tuple[KepcoSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         suggested_display_precision=1,
         value_fn=lambda d: _billing(d, "usage_kwh"),
+        # 커스텀 카드(kepco-billing-cycle-card)가 이 센서 하나만 보고 그릴 수 있도록
+        # 청구주기 표시에 필요한 것을 전부 속성으로 붙인다.
         attrs_fn=lambda d: {
             "billing_start": _billing(d, "billing_start"),
             "billing_end": _billing(d, "billing_end"),
             "days_elapsed": _billing(d, "days_elapsed"),
             "progressive_level": _billing(d, "progressive_level"),
+            "tier_unit_prices": [
+                str(p) for p in (_billing(d, "tier_unit_prices") or ())
+            ],
         },
     ),
     # device_class=energy 는 total/total_increasing 만 허용한다. 이 값은 누적이 아니라
@@ -168,6 +173,8 @@ SENSORS: tuple[KepcoSensorDescription, ...] = (
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         native_unit_of_measurement=CURRENCY_KRW,
+        # 원화는 소수점을 쓰지 않는다. 지정하지 않으면 ₩33,798.00 처럼 나온다.
+        suggested_display_precision=0,
         value_fn=lambda d: _billing(d, "current_charge_krw"),
         # 총계를 이루는 항목을 속성으로 붙여 어떻게 나온 금액인지 보이게 한다.
         attrs_fn=lambda d: {
@@ -185,17 +192,19 @@ SENSORS: tuple[KepcoSensorDescription, ...] = (
         device_class=SensorDeviceClass.MONETARY,
         state_class=SensorStateClass.TOTAL,
         native_unit_of_measurement=CURRENCY_KRW,
+        suggested_display_precision=0,
         value_fn=lambda d: _billing(d, "predicted_charge_krw"),
         attrs_fn=lambda d: {"예상 사용량": _billing(d, "predicted_usage_kwh")},
     ),
+    # device_class=timestamp 를 주면 HA 가 사용자 로캘에 맞춰 표시해 준다.
+    # 그러려면 값이 ISO 문자열이 아니라 **tz 를 가진 datetime** 이어야 한다.
     KepcoSensorDescription(
         key="last_reading_time",
         translation_key="last_reading_time",
+        device_class=SensorDeviceClass.TIMESTAMP,
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda d: (
-            getattr(d["latest_interval"], "end").isoformat()
-            if d.get("latest_interval")
-            else None
+            getattr(d["latest_interval"], "end") if d.get("latest_interval") else None
         ),
     ),
 )
@@ -225,9 +234,14 @@ class KepcoSensor(CoordinatorEntity[KepcoCoordinator], SensorEntity):
         cust = coordinator.customer_number or entry.entry_id
         self._attr_unique_id = f"{cust}_{description.key}"
         # §25: 기기는 계정이 아니라 '전기 사용 계약(계량기)' 단위로 만든다.
+        #
+        # 기기 이름은 의도적으로 영문이다. has_entity_name 을 쓰면 entity_id 가
+        # slugify(기기 이름) + slugify(영문 엔티티 이름) 으로 만들어지는데, 한글
+        # 이름은 `kepco_seumateumiteo_...` 처럼 로마자로 옮겨져 읽기 어려워진다.
+        # 화면에 보이는 엔티티 이름은 translations/ko.json 이 한글로 처리한다.
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, cust)},
-            name=f"KEPCO 스마트미터 ({cust})",
+            name=f"KEPCO Smart Meter ({cust})",
             manufacturer=MANUFACTURER,
             model=MODEL,
             configuration_url="https://pp.kepco.co.kr/",
