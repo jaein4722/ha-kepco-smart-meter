@@ -1,0 +1,6 @@
+# 이 저장소는 리눅스(Home Assistant)에서 실행된다. 작업 환경이 Windows 여도
+# 저장소와 체크아웃 모두 LF 로 유지해, 줄바꿈 때문에 diff 가 흔들리지 않게 한다.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary

@@ -1,0 +1,316 @@
+# =============================================================================
+# KEPCO 스마트미터 — HACS 프론트엔드 카드 판
+#
+# 필요한 HACS 카드 (모두 HACS → 프론트엔드에서 설치)
+#   - Mushroom          (lovelace-mushroom)
+#   - card-mod          (lovelace-card-mod)
+#   - button-card       (button-card)
+#
+# 이 세 개를 설치하고 싶지 않다면 dashboard-core.yaml 을 쓰세요. 내장 카드만으로
+# 같은 내용을 담고 있고, 기능적으로 빠지는 것은 아래 두 가지뿐입니다.
+#   - 누진 구간 경계의 계절 자동 전환 (하계 300/450 ↔ 그 외 200/400)
+#   - 진행률 막대
+#
+# 사용법
+#   1. 설정 → 대시보드 → 대시보드 추가 → 새 대시보드
+#   2. 편집(연필) → 우측 상단 ⋮ → 원시 구성 편집기
+#   3. 아래 내용을 통째로 붙여넣습니다
+#   4. XXXXXXXXXX 를 본인 고객번호(10자리)로 일괄 치환합니다
+#
+# 참고: 시간별/일별 그래프는 HACS 카드가 아니라 **내장 statistics-graph** 를 씁니다.
+# mini-graph-card 나 ApexCharts 로 바꾸고 싶을 수 있는데, 이 통합의 시간별 데이터는
+# 센서 히스토리가 아니라 장기 통계(long-term statistics)에 들어 있습니다.
+# mini-graph-card 는 장기 통계를 읽지 못하므로 그래프가 비어 보입니다.
+# ApexCharts 는 `type: statistics` 로 읽을 수 있으니 원하면 교체해도 됩니다.
+# =============================================================================
+
+views:
+  - title: 전기
+    path: kepco
+    icon: mdi:transmission-tower
+    type: sections
+    max_columns: 3
+    sections:
+      # ---------------------------------------------------------------------
+      # 계량기 — 지금 계량기에 찍혀 있는 숫자
+      # ---------------------------------------------------------------------
+      - type: grid
+        cards:
+          - type: custom:mushroom-title-card
+            title: 계량기
+            subtitle: 한전 원격검침(AMI) 기준
+
+          # 지침을 크게 하나. 부제로 언제까지 반영된 값인지 같이 보여준다.
+          - type: custom:mushroom-template-card
+            primary: >-
+              {{ states('sensor.kepco_smart_meter_XXXXXXXXXX_meter_reading')
+                 | float(0) | round(1) }} kWh
+            secondary: >-
+              {% set t = states('sensor.kepco_smart_meter_XXXXXXXXXX_last_reading_time') %}
+              {% if t not in ['unknown', 'unavailable', ''] %}
+                {{ as_timestamp(t) | timestamp_custom('%m월 %d일 %H시') }}까지 반영
+              {% else %}
+                검침 대기 중
+              {% endif %}
+            icon: mdi:counter
+            icon_color: blue
+            multiline_secondary: true
+            entity: sensor.kepco_smart_meter_XXXXXXXXXX_meter_reading
+            card_mod:
+              style: |
+                ha-card {
+                  --card-primary-font-size: 28px;
+                  --card-primary-font-weight: 600;
+                }
+
+          # 상태 요약 칩. 누진 단계 / 검침일까지 / 데이터 지연.
+          - type: custom:mushroom-chips-card
+            alignment: center
+            chips:
+              - type: template
+                entity: sensor.kepco_smart_meter_XXXXXXXXXX_progressive_tier
+                icon: mdi:stairs-up
+                content: "{{ states('sensor.kepco_smart_meter_XXXXXXXXXX_progressive_tier') }}단계"
+                icon_color: >-
+                  {% set t = states('sensor.kepco_smart_meter_XXXXXXXXXX_progressive_tier') | int(1) %}
+                  {{ ['green', 'orange', 'red'][t - 1] if 1 <= t <= 3 else 'grey' }}
+
+              - type: template
+                entity: sensor.kepco_smart_meter_XXXXXXXXXX_days_until_reading
+                icon: mdi:calendar-clock
+                content: >-
+                  {% set d = states('sensor.kepco_smart_meter_XXXXXXXXXX_days_until_reading') | int(-1) %}
+                  {{ '검침일' if d == 0 else ('D-' ~ d if d > 0 else '—') }}
+                icon_color: teal
+
+              # 지연이 3시간을 넘으면 색으로 알린다. 두 시간까지는 정상 범위다.
+              - type: template
+                entity: sensor.kepco_smart_meter_XXXXXXXXXX_last_hour_energy
+                icon: mdi:timer-sand
+                content: >-
+                  {{ state_attr('sensor.kepco_smart_meter_XXXXXXXXXX_last_hour_energy',
+                     'data_delay_minutes') | int(0) }}분 지연
+                icon_color: >-
+                  {% set m = state_attr('sensor.kepco_smart_meter_XXXXXXXXXX_last_hour_energy',
+                     'data_delay_minutes') | int(0) %}
+                  {{ 'red' if m > 240 else ('orange' if m > 180 else 'grey') }}
+
+          - type: custom:mushroom-entity-card
+            entity: sensor.kepco_smart_meter_XXXXXXXXXX_last_hour_energy
+            name: 최근 1시간
+            icon: mdi:flash
+            icon_color: amber
+
+      # ---------------------------------------------------------------------
+      # 이번 청구주기
+      #
+      # 누진 구간 경계가 계절에 따라 다르다는 점을 카드가 알아서 처리한다.
+      #   하계(7~8월)  : 1단계 ~300, 2단계 ~450, 3단계 450~
+      #   그 외 기간   : 1단계 ~200, 2단계 ~400, 3단계 400~
+      # ---------------------------------------------------------------------
+      - type: grid
+        cards:
+          - type: custom:mushroom-title-card
+            title: 이번 청구주기
+            subtitle: 누진 구간 안에서의 위치
+
+          # 진행률 막대. 배경 그라디언트로 다음 구간까지 얼마나 남았는지 보여준다.
+          - type: custom:button-card
+            entity: sensor.kepco_smart_meter_XXXXXXXXXX_billing_cycle_usage
+            show_icon: false
+            show_state: false
+            name: >
+              [[[
+                const m = new Date().getMonth() + 1;
+                const summer = (m === 7 || m === 8);
+                const b1 = summer ? 300 : 200;
+                const b2 = summer ? 450 : 400;
+                const kwh = Number(entity.state);
+                if (isNaN(kwh)) return '데이터 없음';
+                const next = kwh < b1 ? b1 : (kwh < b2 ? b2 : null);
+                const head = `${kwh.toFixed(1)} kWh`;
+                return next === null
+                  ? `${head} · 3단계`
+                  : `${head} · 다음 구간까지 ${(next - kwh).toFixed(1)} kWh`;
+              ]]]
+            styles:
+              card:
+                - height: 64px
+                - padding: 0 16px
+                - font-size: 15px
+                - font-weight: "500"
+                - background: >
+                    [[[
+                      const m = new Date().getMonth() + 1;
+                      const summer = (m === 7 || m === 8);
+                      const b2 = summer ? 450 : 400;
+                      const kwh = Number(entity.state);
+                      if (isNaN(kwh)) return 'var(--card-background-color)';
+                      const pct = Math.min(100, (kwh / b2) * 100);
+                      const tier = kwh < (summer ? 300 : 200) ? 1 : (kwh < b2 ? 2 : 3);
+                      const fill = ['var(--success-color)',
+                                    'var(--warning-color)',
+                                    'var(--error-color)'][tier - 1];
+                      return `linear-gradient(90deg, ${fill} ${pct}%, ` +
+                             `var(--card-background-color) ${pct}%)`;
+                    ]]]
+              name:
+                - justify-self: start
+
+          # secondary_info 를 none 으로 두면 값까지 사라진다. 기본값(state)을 쓴다.
+          - type: custom:mushroom-entity-card
+            entity: sensor.kepco_smart_meter_XXXXXXXXXX_predicted_usage
+            name: 예상 사용량
+            icon: mdi:chart-line
+            icon_color: purple
+
+      # ---------------------------------------------------------------------
+      # 요금 — 한전이 계산해 준 값을 그대로 쓴다. 누진 로직을 재현하지 않는다.
+      # ---------------------------------------------------------------------
+      - type: grid
+        cards:
+          - type: custom:mushroom-title-card
+            title: 요금
+            subtitle: 한전 계산값
+
+          - square: false
+            type: grid
+            columns: 2
+            cards:
+              # 천 단위 구분은 Jinja 의 str.format 으로 넣는다. HA 에는
+              # format_number 같은 숫자 서식 필터가 없다.
+              - type: custom:mushroom-template-card
+                primary: 현재
+                secondary: >-
+                  {{ '{:,}'.format(
+                     states('sensor.kepco_smart_meter_XXXXXXXXXX_current_bill') | int(0)) }}원
+                icon: mdi:receipt-text
+                icon_color: green
+                entity: sensor.kepco_smart_meter_XXXXXXXXXX_current_bill
+
+              - type: custom:mushroom-template-card
+                primary: 예상
+                secondary: >-
+                  {{ '{:,}'.format(
+                     states('sensor.kepco_smart_meter_XXXXXXXXXX_predicted_bill') | int(0)) }}원
+                icon: mdi:receipt-text-clock
+                icon_color: orange
+                entity: sensor.kepco_smart_meter_XXXXXXXXXX_predicted_bill
+
+          # 총계가 어떤 항목으로 이뤄졌는지. 한전 고지서와 같은 순서로 둔다.
+          # 블록 스칼라는 반드시 `|-` 여야 한다. `>-` 를 쓰면 줄바꿈이 공백으로
+          # 접혀서 마크다운 표가 한 줄짜리 파이프 문자열로 렌더링된다.
+          - type: markdown
+            content: |-
+              {%- set e = 'sensor.kepco_smart_meter_XXXXXXXXXX_current_bill' -%}
+              | 항목 | 금액 |
+              |---|---:|
+              {% for k in ['기본요금', '전력량요금', '기후환경요금', '연료비조정액', '부가가치세', '전력산업기반기금'] -%}
+              | {{ k }} | {{ '{:,}'.format(state_attr(e, k) | int(0)) }}원 |
+              {% endfor -%}
+              | **합계** | **{{ '{:,}'.format(states(e) | int(0)) }}원** |
+
+      # ---------------------------------------------------------------------
+      # 소비 추이
+      #
+      # 센서 히스토리가 아니라 장기 통계를 읽는다. 통합이 구간 시작 시각에 직접
+      # 써넣기 때문에, 설치 직후에도 지난 청구주기가 통째로 그려진다.
+      # ---------------------------------------------------------------------
+      - type: grid
+        column_span: 2
+        cards:
+          # 제목이 한 행을 통째로 차지해야 아래 그래프 두 개가 나란히 놓인다.
+          # 지정하지 않으면 커스텀 카드의 기본 폭 때문에 그래프가 어긋나게 흐른다.
+          - type: custom:mushroom-title-card
+            title: 소비 추이
+            subtitle: 실제로 전기를 쓴 시각 기준
+            grid_options:
+              columns: full
+
+          - type: statistics-graph
+            title: 시간별 사용량 (최근 3일)
+            chart_type: bar
+            period: hour
+            days_to_show: 3
+            stat_types:
+              - change
+            entities:
+              - entity: kepco_smart_meter:XXXXXXXXXX_energy
+                name: 사용량
+
+          - type: statistics-graph
+            title: 일별 사용량 (최근 30일)
+            chart_type: bar
+            period: day
+            days_to_show: 30
+            stat_types:
+              - change
+            entities:
+              - entity: kepco_smart_meter:XXXXXXXXXX_energy
+                name: 사용량
+
+      # ---------------------------------------------------------------------
+      # 일별 비교
+      # ---------------------------------------------------------------------
+      - type: grid
+        cards:
+          - type: custom:mushroom-title-card
+            title: 일별
+
+          - square: false
+            type: grid
+            columns: 2
+            cards:
+              # 오늘 값은 그날 첫 구간이 공개되기 전까지 `알 수 없음` 입니다.
+              # 파워플래너가 한두 시간 늦게 올리기 때문이며, 오류가 아닙니다.
+              - type: custom:mushroom-template-card
+                primary: 오늘
+                secondary: >-
+                  {% set v = states('sensor.kepco_smart_meter_XXXXXXXXXX_today_s_energy') %}
+                  {{ (v | float | round(2) ~ ' kWh') if v not in
+                     ['unknown', 'unavailable', ''] else '집계 전' }}
+                icon: mdi:calendar-today
+                icon_color: blue
+                entity: sensor.kepco_smart_meter_XXXXXXXXXX_today_s_energy
+
+              - type: custom:mushroom-template-card
+                primary: 어제
+                secondary: >-
+                  {{ states('sensor.kepco_smart_meter_XXXXXXXXXX_yesterday_s_energy')
+                     | float(0) | round(2) }} kWh
+                icon: mdi:calendar-arrow-left
+                icon_color: cyan
+                entity: sensor.kepco_smart_meter_XXXXXXXXXX_yesterday_s_energy
+
+      # ---------------------------------------------------------------------
+      # 진단
+      # ---------------------------------------------------------------------
+      - type: grid
+        cards:
+          - type: custom:mushroom-title-card
+            subtitle: 진단
+
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - type: attribute
+                entity: sensor.kepco_smart_meter_XXXXXXXXXX_last_hour_energy
+                attribute: data_delay_minutes
+                name: 데이터 지연
+                suffix: " 분"
+              - type: attribute
+                entity: sensor.kepco_smart_meter_XXXXXXXXXX_last_hour_energy
+                attribute: interval_completeness
+                name: 백필 창 구간 수
+              - type: attribute
+                entity: sensor.kepco_smart_meter_XXXXXXXXXX_billing_cycle_usage
+                attribute: billing_start
+                name: 검침 시작일
+              - type: attribute
+                entity: sensor.kepco_smart_meter_XXXXXXXXXX_billing_cycle_usage
+                attribute: billing_end
+                name: 검침 종료일
+              - type: attribute
+                entity: sensor.kepco_smart_meter_XXXXXXXXXX_meter_reading
+                attribute: last_successful_update
+                name: 마지막 갱신

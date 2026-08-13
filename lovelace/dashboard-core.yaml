@@ -1,0 +1,250 @@
+# =============================================================================
+# KEPCO 스마트미터 — 내장 카드 전용 대시보드
+#
+# 추가 설치가 필요 없습니다. Home Assistant 2024.11 이상이면 그대로 동작합니다.
+#
+# 사용법
+#   1. 설정 → 대시보드 → 대시보드 추가 → 새 대시보드
+#   2. 편집(연필) → 우측 상단 ⋮ → 원시 구성 편집기
+#   3. 아래 내용을 통째로 붙여넣습니다
+#   4. XXXXXXXXXX 를 본인 고객번호(10자리)로 일괄 치환합니다
+#
+# 고객번호는 통합의 `계량기 지침` 센서 속성 `customer_number` 에서 확인할 수 있습니다.
+# =============================================================================
+
+views:
+  - title: 전기
+    path: kepco
+    icon: mdi:transmission-tower
+    type: sections
+    max_columns: 3
+    sections:
+      # ---------------------------------------------------------------------
+      # 계량기 — 지금 계량기에 찍혀 있는 숫자와, 그 숫자가 어디까지 반영된 것인지
+      # ---------------------------------------------------------------------
+      - type: grid
+        cards:
+          - type: heading
+            heading: 계량기
+            heading_style: title
+            icon: mdi:counter
+
+          - type: tile
+            entity: sensor.kepco_smart_meter_XXXXXXXXXX_meter_reading
+            name: 계량기 지침
+            icon: mdi:counter
+            color: primary
+            vertical: false
+
+          # 마지막으로 검침이 반영된 시각. 파워플래너는 한두 시간 늦게 공개하므로
+          # 이 값이 현재 시각보다 뒤처져 있는 것이 정상이다.
+          - type: tile
+            entity: sensor.kepco_smart_meter_XXXXXXXXXX_last_reading_time
+            name: 최종 검침 시각
+            icon: mdi:clock-check-outline
+            color: grey
+
+          # state_content 에 last_interval_start 를 같이 넣으면 타일 폭을 넘겨
+          # 말줄임표로 잘린다. 구간 시각은 위의 `최종 검침 시각` 타일이 담당한다.
+          - type: tile
+            entity: sensor.kepco_smart_meter_XXXXXXXXXX_last_hour_energy
+            name: 최근 1시간 사용량
+            icon: mdi:flash
+            color: amber
+
+      # ---------------------------------------------------------------------
+      # 이번 청구주기 — 누진 구간 안에서 지금 어디쯤인지
+      # ---------------------------------------------------------------------
+      - type: grid
+        cards:
+          - type: heading
+            heading: 이번 청구주기
+            heading_style: title
+            icon: mdi:calendar-range
+
+          # 누진 구간 경계는 계절에 따라 다릅니다.
+          #   하계(7~8월)  : 1단계 ~300, 2단계 ~450, 3단계 450~
+          #   그 외 기간   : 1단계 ~200, 2단계 ~400, 3단계 400~
+          # 아래는 하계 기준입니다. 9월이 되면 yellow 300→200, red 450→400 으로
+          # 바꾸세요. 계절을 자동으로 따르게 하려면 HACS 판(dashboard-hacs.yaml)을
+          # 쓰시면 됩니다.
+          - type: gauge
+            entity: sensor.kepco_smart_meter_XXXXXXXXXX_billing_cycle_usage
+            name: 청구주기 사용량
+            unit: kWh
+            min: 0
+            max: 600
+            needle: true
+            severity:
+              green: 0
+              yellow: 300
+              red: 450
+
+          - type: tile
+            entity: sensor.kepco_smart_meter_XXXXXXXXXX_progressive_tier
+            name: 누진 단계
+            icon: mdi:stairs-up
+
+          - type: tile
+            entity: sensor.kepco_smart_meter_XXXXXXXXXX_days_until_reading
+            name: 검침일까지
+            icon: mdi:calendar-clock
+
+          - type: tile
+            entity: sensor.kepco_smart_meter_XXXXXXXXXX_predicted_usage
+            name: 예상 사용량
+            icon: mdi:chart-line
+
+      # ---------------------------------------------------------------------
+      # 요금 — 한전이 계산해 준 값을 그대로 보여준다. 누진 로직을 재현하지 않는다.
+      # ---------------------------------------------------------------------
+      - type: grid
+        cards:
+          - type: heading
+            heading: 요금
+            heading_style: title
+            icon: mdi:currency-krw
+
+          - type: tile
+            entity: sensor.kepco_smart_meter_XXXXXXXXXX_current_bill
+            name: 현재 요금
+            icon: mdi:receipt-text
+            color: green
+
+          - type: tile
+            entity: sensor.kepco_smart_meter_XXXXXXXXXX_predicted_bill
+            name: 예상 요금
+            icon: mdi:receipt-text-clock
+            color: orange
+
+          # 총계가 어떻게 나온 금액인지 항목별로 펼쳐 본다.
+          - type: entities
+            title: 현재 요금 내역
+            show_header_toggle: false
+            entities:
+              - type: attribute
+                entity: sensor.kepco_smart_meter_XXXXXXXXXX_current_bill
+                attribute: 기본요금
+                name: 기본요금
+                suffix: " 원"
+              - type: attribute
+                entity: sensor.kepco_smart_meter_XXXXXXXXXX_current_bill
+                attribute: 전력량요금
+                name: 전력량요금
+                suffix: " 원"
+              - type: attribute
+                entity: sensor.kepco_smart_meter_XXXXXXXXXX_current_bill
+                attribute: 기후환경요금
+                name: 기후환경요금
+                suffix: " 원"
+              - type: attribute
+                entity: sensor.kepco_smart_meter_XXXXXXXXXX_current_bill
+                attribute: 연료비조정액
+                name: 연료비조정액
+                suffix: " 원"
+              - type: attribute
+                entity: sensor.kepco_smart_meter_XXXXXXXXXX_current_bill
+                attribute: 부가가치세
+                name: 부가가치세
+                suffix: " 원"
+              - type: attribute
+                entity: sensor.kepco_smart_meter_XXXXXXXXXX_current_bill
+                attribute: 전력산업기반기금
+                name: 전력산업기반기금
+                suffix: " 원"
+
+      # ---------------------------------------------------------------------
+      # 소비 추이
+      #
+      # 여기가 이 통합의 핵심이다. 센서 히스토리가 아니라 **장기 통계**를 읽는다.
+      # 통합이 구간 시작 시각에 직접 써넣기 때문에, 설치 직후에도 지난 청구주기가
+      # 통째로 그려진다. history-graph 로는 이 데이터를 볼 수 없다.
+      # ---------------------------------------------------------------------
+      - type: grid
+        column_span: 2
+        cards:
+          - type: heading
+            heading: 소비 추이
+            heading_style: title
+            icon: mdi:chart-bar
+
+          - type: statistics-graph
+            title: 시간별 사용량 (최근 3일)
+            chart_type: bar
+            period: hour
+            days_to_show: 3
+            stat_types:
+              - change
+            entities:
+              - entity: kepco_smart_meter:XXXXXXXXXX_energy
+                name: 사용량
+
+          - type: statistics-graph
+            title: 일별 사용량 (최근 30일)
+            chart_type: bar
+            period: day
+            days_to_show: 30
+            stat_types:
+              - change
+            entities:
+              - entity: kepco_smart_meter:XXXXXXXXXX_energy
+                name: 사용량
+
+      # ---------------------------------------------------------------------
+      # 일별 비교
+      # ---------------------------------------------------------------------
+      - type: grid
+        cards:
+          - type: heading
+            heading: 일별
+            heading_style: title
+            icon: mdi:calendar-today
+
+          - type: tile
+            entity: sensor.kepco_smart_meter_XXXXXXXXXX_today_s_energy
+            name: 오늘
+            icon: mdi:calendar-today
+            color: blue
+
+          # 오늘 값은 그날 첫 구간이 공개되기 전까지 `알 수 없음` 입니다. 파워플래너가
+          # 한두 시간 늦게 올리기 때문이며, 오류가 아닙니다.
+          - type: tile
+            entity: sensor.kepco_smart_meter_XXXXXXXXXX_yesterday_s_energy
+            name: 어제
+            icon: mdi:calendar-arrow-left
+            color: cyan
+
+      # ---------------------------------------------------------------------
+      # 진단 — 데이터가 얼마나 늦게 도착하고 있는지
+      # ---------------------------------------------------------------------
+      - type: grid
+        cards:
+          - type: heading
+            heading: 진단
+            heading_style: subtitle
+            icon: mdi:stethoscope
+
+          - type: entities
+            show_header_toggle: false
+            entities:
+              - type: attribute
+                entity: sensor.kepco_smart_meter_XXXXXXXXXX_last_hour_energy
+                attribute: data_delay_minutes
+                name: 데이터 지연
+                suffix: " 분"
+              - type: attribute
+                entity: sensor.kepco_smart_meter_XXXXXXXXXX_last_hour_energy
+                attribute: interval_completeness
+                name: 백필 창 구간 수
+              - type: attribute
+                entity: sensor.kepco_smart_meter_XXXXXXXXXX_billing_cycle_usage
+                attribute: billing_start
+                name: 검침 시작일
+              - type: attribute
+                entity: sensor.kepco_smart_meter_XXXXXXXXXX_billing_cycle_usage
+                attribute: billing_end
+                name: 검침 종료일
+              - type: attribute
+                entity: sensor.kepco_smart_meter_XXXXXXXXXX_meter_reading
+                attribute: last_successful_update
+                name: 마지막 갱신
