@@ -10,7 +10,7 @@
  * 같은 계량기의 형제 엔티티에서 자동으로 찾는다.
  */
 
-const CARD_VERSION = "0.1.0";
+const CARD_VERSION = "0.1.2";
 
 console.info(
   `%c KEPCO-BILL-CARD %c ${CARD_VERSION} `,
@@ -126,8 +126,10 @@ class KepcoBillCard extends HTMLElement {
     return 3;
   }
 
+  /** 머리말 + 금액 + 진행 막대 + 하단 3칸이 들어가려면 3행(184px)이 필요하다.
+   *  2행으로 줄이면 하단이 잘려서 min_rows 를 3으로 둔다. */
   getGridOptions() {
-    return { rows: 3, columns: 12, min_rows: 2, min_columns: 6 };
+    return { rows: 3, columns: 12, min_rows: 3, min_columns: 6 };
   }
 
   _model() {
@@ -370,22 +372,29 @@ class KepcoBillCard extends HTMLElement {
 
   _style() {
     return `<style>
-      ha-card { padding: 16px; position: relative; overflow: hidden; }
+      /* 섹션 뷰가 정해 준 칸 높이 안에서 배치를 끝낸다. 금액이 남는 높이를
+         차지하고 머리말과 하단 요약은 제 높이를 지킨다. */
+      :host { display: block; height: 100%; }
+      ha-card {
+        padding: 16px; position: relative; overflow: hidden;
+        height: 100%; box-sizing: border-box;
+        display: flex; flex-direction: column;
+      }
       ha-card.clickable { cursor: pointer; }
       ha-card.clickable:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
-      .head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+      .head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex: 0 0 auto; }
       .title { font-size: var(--ha-font-size-l, 16px); font-weight: var(--ha-font-weight-medium, 500);
                color: var(--primary-text-color); }
       .sub { font-size: var(--ha-font-size-s, 12px); color: var(--secondary-text-color); }
-      .amount { display: flex; align-items: baseline; gap: 3px; margin: 10px 0 2px; }
+      .amount { display: flex; align-items: center; gap: 3px; margin: 10px 0 2px; flex: 1 1 auto; min-height: 0; }
       .cur { font-size: 34px; font-weight: 600; color: var(--primary-text-color); line-height: 1; }
       .unit { font-size: 15px; color: var(--secondary-text-color); }
-      .bar { height: 6px; border-radius: 3px; background: var(--divider-color);
+      .bar { height: 6px; border-radius: 3px; background: var(--divider-color); flex: 0 0 auto;
              overflow: hidden; margin: 12px 0 2px; }
       .fill { height: 100%; background: var(--primary-color); border-radius: 3px; }
       .row {
         display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
-        margin-top: 12px; border-top: 1px solid var(--divider-color); padding-top: 12px;
+        margin-top: 12px; border-top: 1px solid var(--divider-color); padding-top: 12px; flex: 0 0 auto;
       }
       .cell { text-align: center; min-width: 0; }
       .k { font-size: var(--ha-font-size-xs, 11px); color: var(--secondary-text-color); margin-bottom: 2px; }
@@ -394,7 +403,7 @@ class KepcoBillCard extends HTMLElement {
       .v.t1 { color: var(--success-color, #43a047); }
       .v.t2 { color: var(--warning-color, #ffa600); }
       .v.t3 { color: var(--error-color, #db4437); }
-      .empty { padding: 24px 8px; text-align: center; color: var(--secondary-text-color); }
+      .empty { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; padding: 8px; text-align: center; color: var(--secondary-text-color); }
     </style>`;
   }
 }

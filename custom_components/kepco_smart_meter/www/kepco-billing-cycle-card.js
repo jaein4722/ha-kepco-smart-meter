@@ -16,7 +16,7 @@
  * ha-ripple)와 디자인 토큰을 쓴다. 없으면 같은 모양의 대체물로 떨어진다.
  */
 
-const CARD_VERSION = "0.3.3";
+const CARD_VERSION = "0.4.0";
 
 console.info(
   `%c KEPCO-BILLING-CYCLE-CARD %c ${CARD_VERSION} `,
@@ -186,11 +186,19 @@ class KepcoBillingCycleCard extends HTMLElement {
     return this._config && this._config.show_footer ? 4 : 3;
   }
 
-  /** 섹션 뷰에서 기본 크기와 리사이즈 한계를 알려 준다.
-   *  하단 요약이 3칸이라 좁으면 글자가 뭉개진다. 기본은 섹션 전체 폭. */
+  /** 섹션 뷰의 기본 크기와 리사이즈 한계.
+   *
+   *  한 행이 56px 이라 rows 를 그대로 높이로 받는다. 게이지는 남은 높이에
+   *  맞춰 줄어들므로 어느 크기로 조절해도 카드 밖으로 넘치지 않는다.
+   *  하단 요약이 3칸이라 너무 좁으면 글자가 뭉개져서 min_columns 를 둔다. */
   getGridOptions() {
-    const rows = this._config && this._config.show_footer ? 4 : 3;
-    return { rows, columns: 12, min_rows: 3, min_columns: 6 };
+    const footer = this._config && this._config.show_footer;
+    return {
+      rows: footer ? 5 : 4,
+      columns: 12,
+      min_rows: footer ? 4 : 3,
+      min_columns: 6,
+    };
   }
 
   /** 화면과 상세 창이 같은 값을 쓰도록 계산을 한곳에 모은다. */
@@ -491,19 +499,31 @@ class KepcoBillingCycleCard extends HTMLElement {
 
   _style() {
     return `<style>
-      ha-card { padding: 16px; position: relative; overflow: hidden; }
+      /* 섹션 뷰는 rows 로 칸 높이를 고정해 준다. 그 높이 안에서 배치가 끝나야
+         카드 밖으로 넘치지 않는다. 폭에 비례해 커지는 SVG 를 그대로 두면
+         넓힐수록 칸을 벗어난다. */
+      :host { display: block; height: 100%; }
+      ha-card {
+        padding: 16px; position: relative; overflow: hidden;
+        height: 100%; box-sizing: border-box;
+        display: flex; flex-direction: column;
+      }
       ha-card.clickable { cursor: pointer; }
       ha-card.clickable:focus-visible {
         outline: 2px solid var(--primary-color); outline-offset: 2px;
       }
-      .head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+      .head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; flex: 0 0 auto; }
       .title {
         font-size: var(--ha-font-size-l, 16px);
         font-weight: var(--ha-font-weight-medium, 500);
         color: var(--primary-text-color);
       }
       .period { font-size: var(--ha-font-size-s, 12px); color: var(--secondary-text-color); }
-      .gauge { width: 100%; height: auto; display: block; margin: 4px 0 0; }
+      /* 남은 높이를 채우되 그 안에서 비율을 지킨다(preserveAspectRatio 기본값). */
+      .gauge {
+        flex: 1 1 auto; min-height: 0; width: 100%; height: 100%;
+        display: block; margin: 4px 0 0;
+      }
       .seg { fill: none; stroke-linecap: butt; }
       .t1 { stroke: var(--success-color, #43a047); }
       .t2 { stroke: var(--warning-color, #ffa600); }
@@ -523,7 +543,7 @@ class KepcoBillingCycleCard extends HTMLElement {
       .tick { text-anchor: middle; font-size: 9px; fill: var(--secondary-text-color); }
       .footer {
         display: grid; grid-template-columns: repeat(3, 1fr);
-        gap: 8px; margin-top: 4px;
+        gap: 8px; margin-top: 4px; flex: 0 0 auto;
         border-top: 1px solid var(--divider-color); padding-top: 12px;
       }
       .cell { text-align: center; min-width: 0; }

@@ -13,7 +13,7 @@ CARD_FILES = (
     "kepco-usage-chart-card.js",
     "kepco-bill-card.js",
 )
-CARD_VERSION = "0.6.0"
+CARD_VERSION = "0.7.2"
 FRONTEND_KEY = f"{DOMAIN}_frontend_registered"
 
 CONF_USER_ID = "user_id"

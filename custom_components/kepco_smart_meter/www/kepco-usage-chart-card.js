@@ -13,7 +13,7 @@
  * 한전 화면도 같은 자리에 "실시간 요금은 예상치"라고 적어 둔다.
  */
 
-const CARD_VERSION = "0.2.0";
+const CARD_VERSION = "0.2.1";
 
 console.info(
   `%c KEPCO-USAGE-CHART-CARD %c ${CARD_VERSION} `,
@@ -564,8 +564,14 @@ class KepcoUsageChartCard extends HTMLElement {
 
   _style() {
     return `<style>
-      ha-card { padding: 16px; }
-      .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+      /* 섹션 뷰가 정해 준 칸 높이 안에서 배치를 끝낸다. 그래프는 남은 높이를
+         채우고, 머리말과 하단 요약은 제 높이를 지킨다. */
+      :host { display: block; height: 100%; }
+      ha-card {
+        padding: 16px; height: 100%; box-sizing: border-box;
+        display: flex; flex-direction: column; overflow: hidden;
+      }
+      .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; flex: 0 0 auto; }
       .title { font-size: var(--ha-font-size-l, 16px); font-weight: var(--ha-font-weight-medium, 500);
                color: var(--primary-text-color); }
       .chips { display: flex; gap: 4px; }
@@ -575,15 +581,15 @@ class KepcoUsageChartCard extends HTMLElement {
         background: var(--secondary-background-color); color: var(--secondary-text-color);
       }
       .chip.on { background: var(--primary-color); color: var(--text-primary-color, #fff); }
-      .nav { display: flex; align-items: center; gap: 6px; margin: 8px 0 0; }
+      .nav { display: flex; align-items: center; gap: 6px; margin: 8px 0 0; flex: 0 0 auto; }
       .navbtn {
         border: 0; background: var(--secondary-background-color); color: var(--primary-text-color);
         width: 24px; height: 24px; border-radius: 12px; cursor: pointer; font-size: 15px; line-height: 1;
       }
       .navbtn[disabled] { opacity: .35; cursor: default; }
       .navlabel { font-size: var(--ha-font-size-s, 12px); color: var(--secondary-text-color); }
-      .chartwrap { position: relative; margin-top: 4px; }
-      .chart { width: 100%; height: auto; display: block; overflow: visible; }
+      .chartwrap { position: relative; margin-top: 4px; flex: 1 1 auto; min-height: 0; }
+      .chart { width: 100%; height: 100%; display: block; overflow: visible; }
       .grid { stroke: var(--divider-color); stroke-width: 1; }
       .ytick { text-anchor: end; font-size: 9px; fill: var(--secondary-text-color); }
       .ytick.right { text-anchor: start; }
@@ -604,7 +610,7 @@ class KepcoUsageChartCard extends HTMLElement {
         padding: 4px 8px; font-size: 12px; white-space: nowrap;
         box-shadow: 0 2px 8px rgba(0,0,0,.3);
       }
-      .legend { display: flex; gap: 12px; justify-content: center; margin-top: 2px; flex-wrap: wrap; }
+      .legend { display: flex; gap: 12px; justify-content: center; margin-top: 2px; flex-wrap: wrap; flex: 0 0 auto; }
       .lg { font-size: 11px; color: var(--secondary-text-color); display: flex; align-items: center; gap: 4px; }
       .lg::before { content: ""; width: 10px; height: 3px; border-radius: 2px; }
       .lg.main::before { background: var(--primary-color); }
@@ -612,14 +618,14 @@ class KepcoUsageChartCard extends HTMLElement {
       .lg.cost::before { background: var(--secondary-text-color); opacity: .5; height: 8px; }
       .foot {
         display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
-        margin-top: 10px; border-top: 1px solid var(--divider-color); padding-top: 10px;
+        margin-top: 10px; border-top: 1px solid var(--divider-color); padding-top: 10px; flex: 0 0 auto;
       }
       .cell { text-align: center; }
       .k { font-size: var(--ha-font-size-xs, 11px); color: var(--secondary-text-color); }
       .v { font-size: var(--ha-font-size-m, 15px); font-weight: var(--ha-font-weight-medium, 500);
            color: var(--primary-text-color); }
-      .note { margin-top: 8px; font-size: 11px; line-height: 1.4; color: var(--secondary-text-color); }
-      .empty { padding: 40px 8px; text-align: center; color: var(--secondary-text-color); }
+      .note { margin-top: 8px; font-size: 11px; line-height: 1.4; color: var(--secondary-text-color); flex: 0 0 auto; }
+      .empty { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; padding: 8px; text-align: center; color: var(--secondary-text-color); }
     </style>`;
   }
 }
