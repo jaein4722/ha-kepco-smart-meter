@@ -5,6 +5,17 @@ DOMAIN = "kepco_smart_meter"
 MANUFACTURER = "한국전력공사"
 MODEL = "Smart Meter (PowerPlanner AMI)"
 
+# 통합이 함께 배포하는 Lovelace 커스텀 카드. www/ 아래 파일을 그대로 서빙한다.
+# CARD_VERSION 은 캐시 무효화용이라 카드를 고칠 때마다 올려야 한다.
+URL_BASE = f"/{DOMAIN}"
+CARD_FILES = (
+    "kepco-billing-cycle-card.js",
+    "kepco-usage-chart-card.js",
+    "kepco-bill-card.js",
+)
+CARD_VERSION = "0.6.0"
+FRONTEND_KEY = f"{DOMAIN}_frontend_registered"
+
 CONF_USER_ID = "user_id"
 CONF_CUSTOMER_NUMBER = "customer_number"
 CONF_READING_DAY = "reading_day"
