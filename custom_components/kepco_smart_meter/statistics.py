@@ -19,9 +19,6 @@ import logging
 from datetime import timedelta
 from decimal import Decimal
 
-# 직전 누적합을 찾을 때 거슬러 볼 범위. 며칠 비어 있어도 이어 붙을 만큼 넉넉히.
-LOOKBACK_FOR_SUM = timedelta(days=45)
-
 from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
 
@@ -34,17 +31,53 @@ from homeassistant.components.recorder.statistics import (
     statistics_during_period,
 )
 from homeassistant.const import UnitOfEnergy
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 
 from .api import EnergyInterval
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+# 직전 누적합을 찾을 때 거슬러 볼 범위. 며칠 비어 있어도 이어 붙을 만큼 넉넉히.
+LOOKBACK_FOR_SUM = timedelta(days=45)
+
 
 def statistic_id_for(customer_number: str) -> str:
     """외부 통계 식별자. `도메인:객체` 형식이어야 한다."""
     return f"{DOMAIN}:{customer_number}_energy"
+
+
+def _metadata(statistic_id: str, display_name: str) -> StatisticMetaData:
+    """외부 통계 메타데이터. HA 버전에 따라 요구 필드가 다르다."""
+    kwargs: dict = {
+        "has_sum": True,
+        "name": display_name,
+        "source": DOMAIN,
+        "statistic_id": statistic_id,
+        "unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR,
+    }
+    if "unit_class" in getattr(StatisticMetaData, "__annotations__", {}):
+        kwargs["unit_class"] = "energy"
+    # mean_type 은 2026.11 부터 필수다. 구버전 호환을 위해 있을 때만 넣는다.
+    if StatisticMeanType is not None:
+        kwargs["mean_type"] = StatisticMeanType.NONE
+    else:
+        kwargs["has_mean"] = False
+    return StatisticMetaData(**kwargs)
+
+
+@callback
+def async_clear_series(hass: HomeAssistant, customer_number: str) -> None:
+    """이 계량기의 외부 통계를 통째로 지운다.
+
+    앵커(전월지침)가 바뀌면 누적합 축 전체가 옮겨진다. 기록된 행을 하나씩 고치는
+    방법도 있지만, 그 직후에 도는 구간 기록이 옛 누적합을 읽어 최근 며칠만 옛
+    기준선에 남는 경합이 생긴다. 지우고 백필을 다시 돌리면 쓰는 주체가 하나뿐이라
+    그런 일이 없다.
+
+    지우기와 다시 쓰기가 모두 recorder 의 같은 작업 큐를 타므로 순서는 보장된다.
+    """
+    get_instance(hass).async_clear_statistics([statistic_id_for(customer_number)])
 
 
 async def _async_sum_before(
@@ -93,6 +126,8 @@ async def async_import_intervals(
     display_name: str,
     intervals: list[EnergyInterval],
     anchor_kwh: Decimal = Decimal(0),
+    *,
+    restart: bool = False,
 ) -> tuple[int, Decimal | None]:
     """구간들을 실제 소비 시각에 맞춰 장기 통계로 써넣는다.
 
@@ -109,7 +144,9 @@ async def async_import_intervals(
     statistic_id = statistic_id_for(customer_number)
 
     # 이 창 이전까지의 누적합에서 이어 간다. 없으면 앵커에서 시작한다.
-    running = await _async_sum_before(hass, statistic_id, ordered[0].start)
+    # restart 는 시리즈를 지우고 다시 채우는 경우다. 이때 DB 를 읽으면 아직 지워지지
+    # 않은 옛 행을 볼 수 있으므로 아예 읽지 않고 앵커에서 새로 쌓는다.
+    running = None if restart else await _async_sum_before(hass, statistic_id, ordered[0].start)
     priming = running is None  # 앞선 데이터가 없다 = 앵커에서 새로 시작한다
     if running is None:
         running = anchor_kwh
@@ -130,23 +167,7 @@ async def async_import_intervals(
         # start 는 구간이 시작된 시각이어야 한다. KEPCO 라벨이 아니라 실제 소비 시각.
         stats.append(StatisticData(start=interval.start, sum=float(running)))
 
-    # mean_type 은 2026.11 부터 필수다. 구버전 호환을 위해 있을 때만 넣는다.
-    meta_kwargs: dict = {
-        "has_sum": True,
-        "name": display_name,
-        "source": DOMAIN,
-        "statistic_id": statistic_id,
-        "unit_of_measurement": UnitOfEnergy.KILO_WATT_HOUR,
-    }
-    if "unit_class" in getattr(StatisticMetaData, "__annotations__", {}):
-        meta_kwargs["unit_class"] = "energy"
-    if StatisticMeanType is not None:
-        meta_kwargs["mean_type"] = StatisticMeanType.NONE
-    else:
-        meta_kwargs["has_mean"] = False
-    metadata = StatisticMetaData(**meta_kwargs)
-
-    async_add_external_statistics(hass, metadata, stats)
+    async_add_external_statistics(hass, _metadata(statistic_id, display_name), stats)
     _LOGGER.debug(
         "%s: 구간 %d개 기록 (%s ~ %s, 누적 %s kWh)",
         statistic_id,

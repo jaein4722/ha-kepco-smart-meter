@@ -43,7 +43,7 @@ from .const import (
     STORAGE_VERSION,
     UPDATE_MINUTES,
 )
-from .statistics import async_import_intervals
+from .statistics import async_clear_series, async_import_intervals
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -60,7 +60,10 @@ class KepcoCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.customer_number: str = entry.data.get(CONF_CUSTOMER_NUMBER, "")
         self.customer: CustomerInfo | None = None
 
-        raw_anchor = entry.data.get(CONF_PREVIOUS_READING)
+        # 옵션에서 고친 값이 우선이다. 검침 후 새 지침을 넣으면 여기로 들어온다.
+        raw_anchor = entry.options.get(
+            CONF_PREVIOUS_READING, entry.data.get(CONF_PREVIOUS_READING)
+        )
         self.anchor_kwh = Decimal(str(raw_anchor)) if raw_anchor not in (None, "") else Decimal(0)
         self.anchor_date: date | None = None
         if entry.data.get(CONF_ANCHOR_DATE):
@@ -69,17 +72,64 @@ class KepcoCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._store: Store = Store(hass, STORAGE_VERSION, f"{STORAGE_KEY}.{entry.entry_id}")
         self._state: dict[str, Any] = {}
         self._backfilled = False
+        self._anchor_changed: Decimal | None = None
+        self._restart_series = False
 
     async def async_load_store(self) -> None:
         self._state = await self._store.async_load() or {}
         self._backfilled = bool(self._state.get("backfilled"))
 
+        recorded = self._state.get("anchor_kwh")
+        if recorded is None:
+            # 이전 버전에서 올라온 설치본. 지금 값을 기준선으로 적어 두고 넘어간다.
+            self._state["anchor_kwh"] = str(self.anchor_kwh)
+            await self._store.async_save(self._state)
+        elif Decimal(str(recorded)) != self.anchor_kwh:
+            # 실제 처리는 갱신 시점에 한다. 설치 시점에 건드리면 곧이어 도는 첫
+            # 갱신과 순서가 엉킨다.
+            self._anchor_changed = Decimal(str(recorded))
+
+    async def _async_apply_anchor_change(self) -> None:
+        """전월지침이 바뀌었으면 통계를 지우고 새 기준선으로 다시 채운다.
+
+        앵커는 첫 백필에서 누적합의 출발점으로만 쓰인다. 그 뒤로는 직전 누적합을
+        이어받으므로, 값만 바꿔서는 이미 기록된 통계가 옛 기준선에 남는다.
+
+        기록된 행의 누적합을 하나씩 옮기는 방법도 써 봤지만, 바로 뒤따르는 구간
+        기록이 옛 값을 읽어 최근 며칠만 옛 기준선에 남았다. 지우고 다시 채우면
+        쓰는 주체가 하나뿐이라 그런 일이 없다.
+        """
+        if self._anchor_changed is None:
+            return
+        previous = self._anchor_changed
+        self._anchor_changed = None
+
+        _LOGGER.info(
+            "전월지침 %s → %s. 통계를 지우고 다시 채운다", previous, self.anchor_kwh
+        )
+        if self.customer_number:
+            async_clear_series(self.hass, self.customer_number)
+
+        # 다음 흐름에서 백필이 다시 돌도록 표시를 지운다.
+        self._backfilled = False
+        self._restart_series = True
+        self._state["backfilled"] = False
+        self._state["anchor_kwh"] = str(self.anchor_kwh)
+        await self._store.async_save(self._state)
+
     # ------------------------------------------------------------------ 내부
 
-    async def _async_backfill(self, billing: BillingStatus) -> None:
-        """앵커(또는 청구주기 시작)부터 어제까지 한 번 훑어 통계를 채운다.
+    async def _async_backfill(
+        self, billing: BillingStatus
+    ) -> tuple[list[EnergyInterval], Decimal | None]:
+        """앵커(또는 청구주기 시작)부터 오늘까지 한 번 훑어 통계를 채운다.
 
         HA 가 며칠 꺼져 있었어도 이 과정이 빈 구간을 메운다(§23).
+
+        가져온 구간과 마지막 누적합을 돌려준다. 호출한 쪽이 이걸 그대로 쓰면 같은
+        주기에 최근 며칠을 또 조회할 필요가 없다. 중복 조회를 없애는 것뿐 아니라,
+        방금 쓴 값을 DB 에서 되읽는 일을 피하는 의미가 크다. 그 되읽기는 recorder
+        큐를 거치지 않아 아직 반영되지 않은 상태를 볼 수 있다.
         """
         start = self.anchor_date or billing.billing_start
         if start is None:
@@ -88,19 +138,26 @@ class KepcoCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         end = date.today()
         _LOGGER.info("초기 백필: %s ~ %s", start, end)
         intervals = await self.client.async_get_hourly_range(start, end)
+        register: Decimal | None = None
         if intervals:
-            count, total = await async_import_intervals(
+            count, register = await async_import_intervals(
                 self.hass,
                 self.customer_number,
                 f"KEPCO {self.customer_number}",
                 intervals,
                 self.anchor_kwh,
+                # 앵커가 바뀌어 시리즈를 지운 직후라면 DB 를 읽지 않고 새로 쌓는다.
+                restart=self._restart_series,
             )
-            _LOGGER.info("백필 완료: 구간 %d개, 누적 %s kWh", count, total)
+            _LOGGER.info("백필 완료: 구간 %d개, 누적 %s kWh", count, register)
 
+        self._restart_series = False
         self._backfilled = True
         self._state["backfilled"] = True
+        # 어느 앵커로 채웠는지 남겨 둬야 나중에 바뀐 걸 알아챌 수 있다.
+        self._state["anchor_kwh"] = str(self.anchor_kwh)
         await self._store.async_save(self._state)
+        return intervals, register
 
     async def _async_recent_intervals(self) -> list[EnergyInterval]:
         """오늘과 최근 며칠을 다시 훑는다. 늦게 도착한 구간을 잡기 위해서다."""
@@ -118,6 +175,9 @@ class KepcoCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     # ------------------------------------------------------------------ 갱신
 
     async def _async_update_data(self) -> dict[str, Any]:
+        # 구간을 기록하기 전에 기준선부터 맞춘다.
+        await self._async_apply_anchor_change()
+
         try:
             if self.customer is None:
                 customers = await self.client.async_list_customers()
@@ -131,26 +191,26 @@ class KepcoCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             billing = await self.client.async_get_billing_status()
 
+            register: Decimal | None = None
             if not self._backfilled:
-                await self._async_backfill(billing)
-
-            intervals = await self._async_recent_intervals()
+                # 백필이 오늘까지 다 채우므로 최근 며칠을 또 볼 필요가 없다.
+                intervals, register = await self._async_backfill(billing)
+            else:
+                intervals = await self._async_recent_intervals()
+                if intervals:
+                    _, register = await async_import_intervals(
+                        self.hass,
+                        self.customer_number,
+                        f"KEPCO {self.customer_number}",
+                        intervals,
+                        self.anchor_kwh,
+                    )
         except KepcoAuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
         except KepcoError as err:
             raise UpdateFailed(str(err)) from err
         except Exception as err:  # noqa: BLE001
             raise UpdateFailed(f"예상치 못한 오류: {err}") from err
-
-        register: Decimal | None = None
-        if intervals:
-            _, register = await async_import_intervals(
-                self.hass,
-                self.customer_number,
-                f"KEPCO {self.customer_number}",
-                intervals,
-                self.anchor_kwh,
-            )
 
         latest = max(intervals, key=lambda i: i.end) if intervals else None
         now = datetime.now(KST)
