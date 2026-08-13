@@ -110,10 +110,21 @@ async def async_import_intervals(
 
     # 이 창 이전까지의 누적합에서 이어 간다. 없으면 앵커에서 시작한다.
     running = await _async_sum_before(hass, statistic_id, ordered[0].start)
+    priming = running is None  # 앞선 데이터가 없다 = 앵커에서 새로 시작한다
     if running is None:
         running = anchor_kwh
 
     stats: list[StatisticData] = []
+
+    # 앵커를 첫 구간의 누적합에 그냥 섞으면, HA 가 그 칸의 `change` 를 앵커 전체로
+    # 계산한다. 일별·월별 그래프 첫 칸이 수천 kWh 짜리 막대로 튀어 나머지가
+    # 바닥에 깔려 버린다. 앵커는 직전 시각에 별도 행으로 놓아, 첫 구간의 change 가
+    # 그 구간에 실제로 쓴 양만 되도록 한다.
+    if priming:
+        stats.append(
+            StatisticData(start=ordered[0].start - timedelta(hours=1), sum=float(running))
+        )
+
     for interval in ordered:
         running += interval.energy_kwh
         # start 는 구간이 시작된 시각이어야 한다. KEPCO 라벨이 아니라 실제 소비 시각.
