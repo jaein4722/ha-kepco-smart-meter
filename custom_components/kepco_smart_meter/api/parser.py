@@ -101,11 +101,16 @@ def parse_billing(payload: Any) -> BillingStatus:
     if not isinstance(payload, dict):
         raise KepcoResponseFormatError("청구 응답이 객체가 아님")
 
-    end = _ymd(payload.get("SELECT_DT") or payload.get("END_DT"))
+    # SELECT_DT 는 조회 기준일(대개 오늘)이지 주기의 끝이 아니다.
+    # 검침일은 END_DT 다. 예: START_DT 2026.08.15 / END_DT 2026.09.14 /
+    # SELECT_DT 2026.08.18 / DT 4 (경과 일수).
+    end = _ymd(payload.get("END_DT"))
     start = _ymd(payload.get("START_DT"))
     days = _int(payload.get("DT"))
-    if start is None and end and days:
-        start = end - timedelta(days=days - 1)
+    if start is None and days:
+        as_of = _ymd(payload.get("SELECT_DT"))
+        if as_of:
+            start = as_of - timedelta(days=days - 1)
 
     tiers = tuple(
         p
