@@ -32,6 +32,12 @@ UPDATE_MINUTES = [5, 35]
 # 매 갱신마다 다시 훑는 창. AMI 는 지연·정정될 수 있으므로 최신 구간만 보지 않는다(§13).
 BACKFILL_DAYS = 2
 
+# 갱신 하나가 끝나지 않으면 이후 예약이 전부 무시되어 조용히 멈춘다.
+# 요청마다 상한이 있어도 세션 정리 같은 구간은 덮이지 않으므로 전체에 건다.
+# 일상 갱신은 최근 며칠만 보지만 첫 백필은 두 달을 훑으므로 따로 잡는다.
+UPDATE_TIMEOUT = 300
+BACKFILL_TIMEOUT = 1800
+
 STORAGE_VERSION = 1
 STORAGE_KEY = f"{DOMAIN}.state"
 

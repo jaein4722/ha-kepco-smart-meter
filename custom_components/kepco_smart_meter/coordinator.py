@@ -10,6 +10,7 @@ AMI 는 늦게 오고 정정되기도 하므로 최신 구간만 보지 않고 �
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -34,6 +35,7 @@ from .api import (
 )
 from .const import (
     BACKFILL_DAYS,
+    BACKFILL_TIMEOUT,
     CONF_ANCHOR_DATE,
     CONF_CUSTOMER_NUMBER,
     CONF_PREVIOUS_READING,
@@ -42,6 +44,7 @@ from .const import (
     STORAGE_KEY,
     STORAGE_VERSION,
     UPDATE_MINUTES,
+    UPDATE_TIMEOUT,
 )
 from .statistics import async_clear_series, async_import_intervals
 
@@ -178,33 +181,40 @@ class KepcoCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # 구간을 기록하기 전에 기준선부터 맞춘다.
         await self._async_apply_anchor_change()
 
+        # 갱신이 끝나지 않으면 이후 예약 갱신이 전부 무시되어 조용히 멈춘다.
+        # 실제로 2026-08-18 에 오류 한 줄 없이 4시간 반을 멈춰 있었다.
+        limit = UPDATE_TIMEOUT if self._backfilled else BACKFILL_TIMEOUT
+
         try:
-            if self.customer is None:
-                customers = await self.client.async_list_customers()
-                if customers:
-                    self.customer = next(
-                        (c for c in customers if c.customer_number == self.customer_number),
-                        customers[0],
-                    )
-                    if not self.customer_number:
-                        self.customer_number = self.customer.customer_number
+            async with asyncio.timeout(limit):
+                if self.customer is None:
+                    customers = await self.client.async_list_customers()
+                    if customers:
+                        self.customer = next(
+                            (c for c in customers if c.customer_number == self.customer_number),
+                            customers[0],
+                        )
+                        if not self.customer_number:
+                            self.customer_number = self.customer.customer_number
 
-            billing = await self.client.async_get_billing_status()
+                billing = await self.client.async_get_billing_status()
 
-            register: Decimal | None = None
-            if not self._backfilled:
-                # 백필이 오늘까지 다 채우므로 최근 며칠을 또 볼 필요가 없다.
-                intervals, register = await self._async_backfill(billing)
-            else:
-                intervals = await self._async_recent_intervals()
-                if intervals:
-                    _, register = await async_import_intervals(
-                        self.hass,
-                        self.customer_number,
-                        f"KEPCO {self.customer_number}",
-                        intervals,
-                        self.anchor_kwh,
-                    )
+                register: Decimal | None = None
+                if not self._backfilled:
+                    # 백필이 오늘까지 다 채우므로 최근 며칠을 또 볼 필요가 없다.
+                    intervals, register = await self._async_backfill(billing)
+                else:
+                    intervals = await self._async_recent_intervals()
+                    if intervals:
+                        _, register = await async_import_intervals(
+                            self.hass,
+                            self.customer_number,
+                            f"KEPCO {self.customer_number}",
+                            intervals,
+                            self.anchor_kwh,
+                        )
+        except TimeoutError as err:
+            raise UpdateFailed(f"갱신이 {limit}초 안에 끝나지 않았다") from err
         except KepcoAuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
         except KepcoError as err:
