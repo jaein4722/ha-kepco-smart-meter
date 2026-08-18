@@ -86,7 +86,10 @@ class KepcoClient:
                     raise KepcoEndpointUnavailable(f"{path} 응답 {resp.status_code}")
 
                 text = resp.text.lstrip()
-                if text[:1] in "[{" or text[:1] == '"':
+                # 빈 응답은 세션이 끊겼다는 신호다. `text[:1] in "[{"` 로 쓰면
+                # 빈 문자열이 참이 되어 아래 재로그인 경로를 건너뛰고
+                # 파싱 실패로 새어 나가므로 튜플로 비교한다.
+                if text[:1] in ("[", "{", '"'):
                     try:
                         return json.loads(text)
                     except ValueError as err:
