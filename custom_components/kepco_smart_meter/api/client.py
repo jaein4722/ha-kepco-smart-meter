@@ -93,6 +93,15 @@ class KepcoClient:
                     try:
                         return json.loads(text)
                     except ValueError as err:
+                        # 잘린 JSON 이 돌아오는 일이 있다. 세션이 상한 것일 수
+                        # 있으므로 첫 시도면 다시 로그인해 한 번 더 해 본다.
+                        # 곧바로 포기하면 상한 세션을 계속 들고 30분마다 같은
+                        # 실패만 반복하는데, 코디네이터는 첫 실패만 로그로 남겨
+                        # 밖에서는 조용히 멈춘 것처럼 보인다.
+                        if attempt == 1:
+                            _LOGGER.debug("%s 응답이 JSON 이 아님, 재로그인 후 재시도", path)
+                            await self.async_login()
+                            continue
                         raise KepcoResponseFormatError(f"{path} JSON 파싱 실패") from err
 
                 # 세션이 끊기면 로그인 HTML 이 돌아온다.
